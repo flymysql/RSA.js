@@ -1,4 +1,4 @@
-![截图](https://me.idealli.com/uploads/images/imageup-1591372050798.png)
+![截图](./image.png)
 
 ## 导入js
 ```
