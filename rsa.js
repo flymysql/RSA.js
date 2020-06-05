@@ -786,16 +786,14 @@ function ext_gcd(a, b){
     else{
       var next = ext_gcd(b, bigint_mod(a, b));
       r = next[0];
-      x1 = next[1];
-      y1 = next[2];
-      x = y1
+      x = next[2];
       
       di = bigint_div(a, b);
       if (di == undefined) {
-        di = new BigInt("0")
+        di = new BigInt("0");
       }
-      mu = bigint_mul(di, y1);
-      y = sub_plus(x1, mu)
+      mu = bigint_mul(di, next[2]);
+      y = sub_plus(next[1], mu)
       return [r, x, y]
     }
 }
@@ -831,6 +829,14 @@ function exp_mode(base, exponent, n){
     return bigint_mod(a_w_b, n);
 }
 
+function e_m(base, exponent, n) {
+	var c = new BigInt("1");
+	for (var i = 0; i < exponent; i++) {
+		c = bigint_mod(bigint_mul(c, base),n);
+	}
+	return c;
+}
+
 // 生产公钥与私钥的步骤，一共有5个步骤
 // 1. 入参：选取p、q为两个超大质数
 // 2、令n = p * q。取 φ(n) = (p-1) * (q-1)。
@@ -839,23 +845,48 @@ function exp_mode(base, exponent, n){
 // 5、销毁 p、q。生成公钥私钥
 // 返回：   公钥     私钥     
 var get_key = (p, q)=>{
-    var n = bigint_mul(p, q)
+    var n = bigint_mul(p, q);
     var t1 = new BigInt("1"); 
-    var t0 = new BigInt("0");          
-    var fy = bigint_mul(sub_plus(p, t1), sub_plus(q, t1)) 
-    var e = new BigInt("65537");                    
-    var a = e
-    var b = fy
-    var g = ext_gcd(a, b)
+    var t0 = new BigInt("0"); 
+    var fy = bigint_mul(sub_plus(p, t1), sub_plus(q, t1));
+    var e = new BigInt("65537");
+    var g = ext_gcd(e, fy);
     // var r = g[0]
     var x = g[1]
     // var y = g[2]
     if (bigint_cmp(x, t0) < 0){
         x = add_plus(x, fy);
     }
-    d = x 
     
-    return [[n, e], [n, d]]  
+    return [[n, e], [n, x]]  
+}
+
+var get_crtkey = (p, q, keys)=> {
+	
+	var t1 = new BigInt("1"); 
+	var t0 = new BigInt("0"); 
+	
+	// 计算dp，使得dp*e = 1 mod(p-1)
+	var p_1 = sub_plus(p, t1);
+	var dp = ext_gcd(keys[0][1], p_1)[1];
+	if (bigint_cmp(dp, t0) < 0){
+		dp = add_plus(dp, p_1);
+	}
+	
+	// 计算dq，使得dq*e = 1 mod(q-1)
+	var q_1 = sub_plus(q, t1);
+	var dq = ext_gcd(keys[0][1], q_1)[1];
+	if (bigint_cmp(dq, t0) < 0){
+		dq = add_plus(dq, q_1);
+	}
+	
+	// 计算qInv，使得qInv * q = 1 mod p
+	var qlnv = ext_gcd(q, p)[1];
+	if (bigint_cmp(qlnv, t0) < 0){
+		qlnv = add_plus(qlnv, p);
+	}
+	// console.log(dp.toString(), dq.toString(), qlnv.toString())
+	return [dp, dq, qlnv, p, q];
 }
 
 // 加密 m是被加密的信息 加密成为c
@@ -882,6 +913,22 @@ var decrypt = (c, selfkey) =>{
     for (var i = 0; i < c.length; i++) {
         var t = new BigInt(c[i])
         m = exp_mode(t, d, n)
+        re.push(m.toString())
+    }
+    
+    return re;
+}
+
+var CRTdecrypt = (c, selfkey) =>{
+    var re = []
+    for (var i = 0; i < c.length; i++) {
+        var t = new BigInt(c[i])
+		var m1 = exp_mode(t, selfkey[0], selfkey[3]); // m1=c^dp mod p
+		var m2 = exp_mode(t, selfkey[1], selfkey[4]); // m2=c^dq mod q
+		var tmp = bigint_mod(sub_plus(m1, m2), selfkey[3]);
+		
+		var h = bigint_mod(bigint_mul(selfkey[2], tmp), selfkey[3]);
+        m = sub_plus(m2, bigint_mul(h, selfkey[4]));
         re.push(m.toString())
     }
     
@@ -935,9 +982,13 @@ var FromAssic = function(s){
     return re;
 }
 
+
+
 exports.BigInt = BigInt;
 exports.get_key = get_key;
+exports.get_crtkey = get_crtkey;
 exports.encrypt = encrypt;
 exports.decrypt = decrypt;
+exports.CRTdecrypt = CRTdecrypt;
 exports.ToAssic = ToAssic;
 exports.FromAssic = FromAssic;
